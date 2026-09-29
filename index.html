@@ -71,7 +71,8 @@ button.primary:hover{opacity:.9}
 .mono{font-family:var(--mono)}
 
 /* topic picker */
-.topics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.topics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+@media (max-width:1100px){.topics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:900px){.topics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .topics button{padding:9px 10px;font-size:14px;text-align:left;line-height:1.3;font-weight:600}
 .topics button small{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px}
@@ -231,6 +232,7 @@ svg .m{font-family:var(--mono)}
     <div class="topics" id="topics">
       <button data-mod="i2c"><span data-i="tp_i2c"></span><small data-i="tp_i2c_s"></small></button>
       <button data-mod="mmio"><span data-i="tp_mmio"></span><small data-i="tp_mmio_s"></small></button>
+      <button data-mod="gpio"><span data-i="tp_gpio"></span><small data-i="tp_gpio_s"></small></button>
       <button data-mod="poll"><span data-i="tp_poll"></span><small data-i="tp_poll_s"></small></button>
       <button data-mod="irq"><span data-i="tp_irq"></span><small data-i="tp_irq_s"></small></button>
       <button data-mod="dma"><span data-i="tp_dma"></span><small data-i="tp_dma_s"></small></button>
@@ -300,6 +302,32 @@ svg .m{font-family:var(--mono)}
         <h2 data-i="mm_h_state"></h2>
         <div class="regs" id="mmRegs"></div>
         <p class="note" data-i="mm_state_note"></p>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= GPIO CONTROLLER ================= -->
+  <div class="stack mod" id="mod-gpio" hidden style="margin-top:0">
+    <section class="panel">
+      <h2 data-i="gp_h_pick"></h2>
+      <div class="presets" id="gpPresets"></div>
+      <p class="note" style="margin:0" data-i="gp_click_note"></p>
+    </section>
+    <section class="panel">
+      <h2 data-i="gp_h_ctrl"></h2>
+      <div class="scroll"><svg id="gpSvg" viewBox="0 0 980 462" style="width:100%;min-width:720px;display:block" role="img"></svg></div>
+      <div class="legend" id="gpLegend"></div>
+    </section>
+    <div class="grid2">
+      <section class="panel">
+        <h2 data-i="gp_h_last"></h2>
+        <div class="expl" id="gpExpl"></div>
+        <pre class="code" id="gpCode" style="margin-top:12px"></pre>
+      </section>
+      <section class="panel">
+        <h2 data-i="gp_h_regs"></h2>
+        <div class="regs" id="gpRegs"></div>
+        <p class="note" data-i="gp_regs_note"></p>
       </section>
     </div>
   </div>
@@ -442,7 +470,7 @@ const T={
 pl:{
   doc_title:'Symulator wejścia-wyjścia: I2C, przerwania, DMA',
   title:'Jak CPU rozmawia z urządzeniami',
-  intro:'Wybierz temat i przechodź krok po kroku: jedna wiadomość I2C bit po bicie, jeden sw do urządzenia, polling kontra przerwanie, wejście do procedury obsługi przerwania i kopiowanie przez DMA. Przykłady pochodzą z ESP32-C3 z wykładu.',
+  intro:'Wybierz temat i przechodź krok po kroku: jedna wiadomość I2C bit po bicie, jeden sw do urządzenia, rejestry kontrolera GPIO, polling kontra przerwanie, wejście do procedury obsługi przerwania i kopiowanie przez DMA. Przykłady pochodzą z ESP32-C3 z wykładu.',
   h_topics:'Temat',
   tp_i2c:'I2C', tp_i2c_s:'jedna wiadomość, bit po bicie',
   tp_mmio:'Rejestry urządzeń', tp_mmio_s:'sw i lw do urządzenia, dekoder adresu',
@@ -513,6 +541,48 @@ pl:{
   mx4_ign:(d)=>['Efekt','',`${d} rozpoznał swój adres, ale tego rejestru ten symulator nie modeluje: zapis nic nie zmienia, odczyt daje 0.`],
   mx4_none:(ld,c,a)=>['Wyjątek','',`${ld?'Load':'Store'} access fault: mcause = ${c}, mtval = ${a}. CPU skacze do procedury obsługi wyjątku (zobacz temat „Przerwanie krok po kroku”).`],
   pins_list:l=>l.length?('pin '+l.join(', ')):'żaden pin',
+  /* GPIO controller */
+  tp_gpio:'Kontroler GPIO', tp_gpio_s:'OUT, ENABLE, IN, driver i piny',
+  gp_h_pick:'Instrukcje', gp_reset:'Stan początkowy',
+  gp_click_note:'Możesz też klikać bity na schemacie (zapis do rejestru), przyciski A i B (wciśnij / puść) i rezystory pull-up (włącz / wyłącz).',
+  gp_h_ctrl:'Wnętrze kontrolera GPIO: bit n każdego rejestru dotyczy pinu GPIO n',
+  gp_h_last:'Co się stało', gp_h_regs:'Rejestry',
+  gp_regs_note:'OUT_W1TS i OUT_W1TC niczego nie przechowują (odczyt daje 0). Pokazujemy ostatnią zapisaną wartość.',
+  gp_rd_w1ts:'zapis 1 → ustaw bit w OUT', gp_rd_w1tc:'zapis 1 → wyzeruj bit w OUT', gp_rd_enable:'1 = wyjście: driver włączony', gp_rd_out:'poziom, który driver wystawia', gp_rd_in:'co jest na pinie teraz',
+  gp_l_drv:'driver', gp_l_drv_s:'włącza go ENABLE', gp_l_pin:'pin', gp_l_pin_s:'napięcie na nóżce', gp_l_board:'na płytce', gp_l_board_s:'co jest podłączone',
+  gp_off:'off', gp_short:'zwarcie!', gp_pu_hint:'pull-up',
+  gp_intro:['Jak używać','','Na górze są rejestry kontrolera GPIO, na dole piny i to, co do nich podłączono: LED na pinie 4, przyciski A i B na pinach 5 i 6. Wybierz instrukcję albo klikaj bity i patrz, co dzieje się z rejestrami i z pinami.'],
+  gp_t_w1ts:'Zapis do OUT_W1TS', gp_t_w1tc:'Zapis do OUT_W1TC', gp_t_out:'Zapis do OUT', gp_t_enable:'Zapis do ENABLE', gp_t_in:'Odczyt IN', gp_t_btn:'Przycisk', gp_t_pu:'Pull-up',
+  gp_who_w:'CPU → kontroler GPIO', gp_who_r:'kontroler GPIO → CPU', gp_who_b:'na płytce',
+  gp_x_w1ts:(v,p,a,b)=>`Każdy bit 1 w ${v} ustawia ten sam bit w OUT (${p}). Bity 0 nic nie zmieniają. OUT: ${a} → ${b}.`,
+  gp_x_w1tc:(v,p,a,b)=>`Każdy bit 1 w ${v} zeruje ten sam bit w OUT (${p}). Bity 0 nic nie zmieniają. OUT: ${a} → ${b}.`,
+  gp_x_out:(v,a,b)=>`Zapis prosto do OUT zmienia wszystkie bity naraz. OUT: ${a} → ${b}.`,
+  gp_x_out_lost:p=>`Uwaga: zmieniły się też bity, których nie chcieliśmy ruszać (${p}). Dlatego digitalWrite używa OUT_W1TS i OUT_W1TC.`,
+  gp_x_en:(a,b)=>`ENABLE: ${a} → ${b}.`,
+  gp_x_inw:'IN jest tylko do odczytu: zapis nic nie zmienia.',
+  gp_nochange:'Żaden bit się nie zmienił.',
+  gp_nodrv:n=>`Bit ${n} w OUT się zmienił, ale ENABLE bit ${n} = 0: driver pinu ${n} jest wyłączony, więc na pinie nic się nie dzieje.`,
+  gp_en_on:n=>`ENABLE bit ${n} = 1: driver pinu ${n} się włącza, pin jest wyjściem.`,
+  gp_en_off:n=>`ENABLE bit ${n} = 0: driver pinu ${n} się wyłącza, pin jest wejściem.`,
+  gp_ps_drv1:n=>`Pin ${n}: driver łączy go z 3,3 V (OUT = 1).`,
+  gp_ps_drv0:n=>`Pin ${n}: driver łączy go z 0 V (OUT = 0).`,
+  gp_ps_short:n=>`Pin ${n}: ZWARCIE! Driver łączy go z 3,3 V, a wciśnięty przycisk z GND.`,
+  gp_ps_press:n=>`Pin ${n}: driver wyłączony, wciśnięty przycisk łączy go z GND → 0 V.`,
+  gp_ps_pu:n=>`Pin ${n}: driver wyłączony, pull-up podciąga go do 3,3 V → 1.`,
+  gp_ps_float:n=>`Pin ${n}: driver wyłączony i nic go nie trzyma: napięcie jest nieokreślone (?).`,
+  gp_x_in:(h,b)=>`CPU czyta IN: a4 = ${h}, bity 7…0: ${b}. Każdy bit to stan swojego pinu w tej chwili.`,
+  gp_x_in_btn:(a,b)=>`Bit 5 = ${a}: przycisk A ${a?'puszczony':'wciśnięty'}. Bit 6 = ${b}: przycisk B ${b?'puszczony':'wciśnięty'}.`,
+  gp_x_in_rnd:p=>`Na ${p} napięcie jest nieokreślone, więc te bity wypadły przypadkiem: przy następnym odczycie mogą być inne.`,
+  gp_x_press:(nm,n)=>`Przycisk ${nm} wciśnięty: łączy pin ${n} z GND.`,
+  gp_x_release:(nm,n)=>`Przycisk ${nm} puszczony: już nie łączy pinu ${n} z GND.`,
+  gp_x_short_why:'W prawdziwym układzie popłynąłby duży prąd. Dlatego pin z przyciskiem musi być wejściem: ENABLE bit = 0.',
+  gp_x_pu_on:n=>`Pull-up pinu ${n} włączony.`, gp_x_pu_off:n=>`Pull-up pinu ${n} wyłączony.`,
+  gp_x_iomux:'Pull-up nie jest w kontrolerze GPIO, tylko w bloku IO_MUX, ale działa na ten sam pin.',
+  gp_note_enw1ts:'W prawdziwym ESP32 pinMode zapisuje do ENABLE_W1TS (+0x24), który ustawia bity ENABLE tak, jak OUT_W1TS ustawia bity OUT.',
+  gp_note_pu5:'pinMode włącza też pull-up pinu 5 (w bloku IO_MUX).',
+  gp_c_out:'nadpisuje cały rejestr', gp_c_bad:'błąd: pin z przyciskiem jako wyjście', gp_c_board:'// zmiana na płytce: żadna instrukcja się nie wykonuje', gp_c_pu:n=>`// IO_MUX: pull-up pinu ${n}`,
+  gp_lg_hi:'3,3 V (1)', gp_lg_lo:'0 V (0)', gp_lg_fl:'nieokreślone (?)', gp_lg_sh:'zwarcie', gp_lg_on:'driver włączony', gp_lg_offd:'driver wyłączony', gp_lg_set:'bity zmienione przez W1TS / W1TC',
+  gp_reg_out:'OUT (+0x04)', gp_reg_en:'ENABLE (+0x20)', gp_reg_in:'IN (+0x3C), bity 7…0', gp_reg_w1ts:'OUT_W1TS: ostatni zapis', gp_reg_w1tc:'OUT_W1TC: ostatni zapis', gp_reg_a4:'a4: ostatni odczyt',
   /* POLL */
   po_h_setup:'Program', po_l_mode:'Co robi loop()', po_m_work:'praca 2 s, potem jedno sprawdzenie (zad. 7)', po_m_spin:'tylko sprawdza (zad. 8)',
   po_l_bounce:'Drgania styków (zad. 11)', po_bounce:'przycisk drga', po_deb:'filtr 50 ms w ISR',
@@ -600,7 +670,7 @@ pl:{
 en:{
   doc_title:'I/O simulator: I2C, interrupts, DMA',
   title:'How the CPU talks to devices',
-  intro:'Pick a topic and step through it: one I2C message bit by bit, one sw to a device, polling against an interrupt, entering an interrupt handler, and copying with DMA. The examples use the ESP32-C3 from the lecture.',
+  intro:'Pick a topic and step through it: one I2C message bit by bit, one sw to a device, the registers of the GPIO controller, polling against an interrupt, entering an interrupt handler, and copying with DMA. The examples use the ESP32-C3 from the lecture.',
   h_topics:'Topic',
   tp_i2c:'I2C', tp_i2c_s:'one message, bit by bit',
   tp_mmio:'Device registers', tp_mmio_s:'sw and lw to a device, address decoder',
@@ -669,6 +739,47 @@ en:{
   mx4_ign:(d)=>['Effect','',`The ${d} recognised its address, but this simulator does not model this register: a write changes nothing, a read gives 0.`],
   mx4_none:(ld,c,a)=>['Exception','',`${ld?'Load':'Store'} access fault: mcause = ${c}, mtval = ${a}. The CPU jumps to the exception handler (see “Interrupt step by step”).`],
   pins_list:l=>l.length?((l.length>1?'pins ':'pin ')+l.join(', ')):'no pin',
+  tp_gpio:'GPIO controller', tp_gpio_s:'OUT, ENABLE, IN, driver and pins',
+  gp_h_pick:'Instructions', gp_reset:'Start state',
+  gp_click_note:'You can also click the bits in the picture (a write to the register), buttons A and B (press / release) and the pull-up resistors (on / off).',
+  gp_h_ctrl:'Inside the GPIO controller: bit n of every register is about pin GPIO n',
+  gp_h_last:'What happened', gp_h_regs:'Registers',
+  gp_regs_note:'OUT_W1TS and OUT_W1TC store nothing (a read gives 0). The last written value is shown.',
+  gp_rd_w1ts:'write 1 → set the bit in OUT', gp_rd_w1tc:'write 1 → clear the bit in OUT', gp_rd_enable:'1 = output: driver on', gp_rd_out:'the level the driver puts out', gp_rd_in:'what is on the pin now',
+  gp_l_drv:'driver', gp_l_drv_s:'switched on by ENABLE', gp_l_pin:'pin', gp_l_pin_s:'voltage on the leg', gp_l_board:'on the board', gp_l_board_s:'what is connected',
+  gp_off:'off', gp_short:'short!', gp_pu_hint:'pull-up',
+  gp_intro:['How to use it','','At the top are the registers of the GPIO controller, at the bottom the pins and what is connected to them: an LED on pin 4, buttons A and B on pins 5 and 6. Pick an instruction or click the bits and watch what happens to the registers and the pins.'],
+  gp_t_w1ts:'Write to OUT_W1TS', gp_t_w1tc:'Write to OUT_W1TC', gp_t_out:'Write to OUT', gp_t_enable:'Write to ENABLE', gp_t_in:'Read IN', gp_t_btn:'Button', gp_t_pu:'Pull-up',
+  gp_who_w:'CPU → GPIO controller', gp_who_r:'GPIO controller → CPU', gp_who_b:'on the board',
+  gp_x_w1ts:(v,p,a,b)=>`Every 1 bit in ${v} sets the same bit in OUT (${p}). 0 bits change nothing. OUT: ${a} → ${b}.`,
+  gp_x_w1tc:(v,p,a,b)=>`Every 1 bit in ${v} clears the same bit in OUT (${p}). 0 bits change nothing. OUT: ${a} → ${b}.`,
+  gp_x_out:(v,a,b)=>`A write straight to OUT changes all bits at once. OUT: ${a} → ${b}.`,
+  gp_x_out_lost:p=>`Careful: bits we did not want to touch changed too (${p}). That is why digitalWrite uses OUT_W1TS and OUT_W1TC.`,
+  gp_x_en:(a,b)=>`ENABLE: ${a} → ${b}.`,
+  gp_x_inw:'IN is read only: a write changes nothing.',
+  gp_nochange:'No bit changed.',
+  gp_nodrv:n=>`Bit ${n} of OUT changed, but ENABLE bit ${n} = 0: the driver of pin ${n} is off, so nothing happens on the pin.`,
+  gp_en_on:n=>`ENABLE bit ${n} = 1: the driver of pin ${n} switches on, the pin is an output.`,
+  gp_en_off:n=>`ENABLE bit ${n} = 0: the driver of pin ${n} switches off, the pin is an input.`,
+  gp_ps_drv1:n=>`Pin ${n}: the driver connects it to 3.3 V (OUT = 1).`,
+  gp_ps_drv0:n=>`Pin ${n}: the driver connects it to 0 V (OUT = 0).`,
+  gp_ps_short:n=>`Pin ${n}: SHORT CIRCUIT! The driver connects it to 3.3 V and the pressed button to GND.`,
+  gp_ps_press:n=>`Pin ${n}: driver off, the pressed button connects it to GND → 0 V.`,
+  gp_ps_pu:n=>`Pin ${n}: driver off, the pull-up pulls it to 3.3 V → 1.`,
+  gp_ps_float:n=>`Pin ${n}: driver off and nothing holds it: the voltage is undefined (?).`,
+  gp_x_in:(h,b)=>`The CPU reads IN: a4 = ${h}, bits 7…0: ${b}. Every bit is the state of its pin right now.`,
+  gp_x_in_btn:(a,b)=>`Bit 5 = ${a}: button A is ${a?'released':'pressed'}. Bit 6 = ${b}: button B is ${b?'released':'pressed'}.`,
+  gp_x_in_rnd:p=>`On ${p} the voltage is undefined, so these bits came out by chance: the next read may differ.`,
+  gp_x_press:(nm,n)=>`Button ${nm} pressed: it connects pin ${n} to GND.`,
+  gp_x_release:(nm,n)=>`Button ${nm} released: it no longer connects pin ${n} to GND.`,
+  gp_x_short_why:'In a real circuit a large current would flow. That is why a pin with a button must be an input: ENABLE bit = 0.',
+  gp_x_pu_on:n=>`Pull-up of pin ${n} on.`, gp_x_pu_off:n=>`Pull-up of pin ${n} off.`,
+  gp_x_iomux:'The pull-up is not in the GPIO controller but in the IO_MUX block; it acts on the same pin.',
+  gp_note_enw1ts:'On the real ESP32, pinMode writes to ENABLE_W1TS (+0x24), which sets ENABLE bits just as OUT_W1TS sets OUT bits.',
+  gp_note_pu5:'pinMode also switches on the pull-up of pin 5 (in the IO_MUX block).',
+  gp_c_out:'overwrites the whole register', gp_c_bad:'mistake: a button pin as an output', gp_c_board:'// a change on the board: no instruction runs', gp_c_pu:n=>`// IO_MUX: pull-up of pin ${n}`,
+  gp_lg_hi:'3.3 V (1)', gp_lg_lo:'0 V (0)', gp_lg_fl:'undefined (?)', gp_lg_sh:'short circuit', gp_lg_on:'driver on', gp_lg_offd:'driver off', gp_lg_set:'bits changed by W1TS / W1TC',
+  gp_reg_out:'OUT (+0x04)', gp_reg_en:'ENABLE (+0x20)', gp_reg_in:'IN (+0x3C), bits 7…0', gp_reg_w1ts:'OUT_W1TS: last write', gp_reg_w1tc:'OUT_W1TC: last write', gp_reg_a4:'a4: last read',
   po_h_setup:'The program', po_l_mode:'What loop() does', po_m_work:'2 s of work, then one check (Task 7)', po_m_spin:'only checks (Task 8)',
   po_l_bounce:'Contact bounce (Task 11)', po_bounce:'button bounces', po_deb:'50 ms filter in the ISR',
   po_l_presets:'Ready-made presses', po_p1:'5 short clicks', po_p2:'2 long holds',
@@ -1265,6 +1376,211 @@ function mmInit(){
 }
 
 /* =====================================================================
+   Kontroler GPIO / GPIO controller
+   ===================================================================== */
+const GP_BASE=0x60004000;
+const GP_REG={w1ts:{off:0x08,name:'OUT_W1TS'},w1tc:{off:0x0C,name:'OUT_W1TC'},enable:{off:0x20,name:'ENABLE'},out:{off:0x04,name:'OUT'},in:{off:0x3C,name:'IN'}};
+const GP_USED={4:'LED',5:'A',6:'B'};
+const gpFresh=()=>({enable:1<<4,out:0,pull:(1<<5)|(1<<6),press:{},a4:null,hl:null,chg:{},last:null});
+let GP=gpFresh();
+const gpBit=(v,n)=>(v>>>n)&1;
+const gpCx=n=>250+(7-n)*96;
+function gpKind(n){
+  const en=gpBit(GP.enable,n),o=gpBit(GP.out,n),pr=!!GP.press[n],pu=gpBit(GP.pull,n);
+  if(en&&pr)return o?'short':'drv0';
+  if(en)return o?'drv1':'drv0';
+  if(pr)return 'press';
+  if(pu)return 'pu';
+  return 'float';
+}
+function gpLevel(n){const k=gpKind(n);return k==='drv1'||k==='pu'?1:k==='drv0'||k==='press'?0:k==='short'?'!':'?';}
+function gpInStr(){let s='';for(let n=7;n>=0;n--){const l=gpLevel(n);s+=l===1||l===0?l:'?';}return s;}
+const gpPins=m=>{const l=[];for(let n=0;n<8;n++)if(gpBit(m,n))l.push(n);return l;};
+const gpPin=n=>t('gp_ps_'+gpKind(n),n);
+function gpAsm(reg,val,op){
+  const off=GP_REG[reg].off,L=['lui  a5, 0x60004'.padEnd(22)+'# a5 = '+hexA(GP_BASE)];
+  if(op==='sw')L.push(`li   a4, ${hexN(val)}`.padEnd(22)+'# '+bin(val&0xFF,8));
+  L.push(`${op}   a4, ${hexN(off,2)}(a5)`.padEnd(22)+`# ${GP_REG[reg].name}, ${hexA(GP_BASE+off)}`);
+  return L;
+}
+function gpWrite(reg,val,cLine,extra){
+  val=val>>>0;
+  const b={enable:GP.enable,out:GP.out};
+  if(reg==='w1ts')GP.out=(GP.out|val)>>>0;
+  else if(reg==='w1tc')GP.out=(GP.out&~val)>>>0;
+  else if(reg==='out')GP.out=val;
+  else if(reg==='enable')GP.enable=val;
+  GP.hl={reg,val};GP.chg={out:(b.out^GP.out)&0xFF,enable:(b.enable^GP.enable)&0xFF};
+  const chOut=gpPins(GP.chg.out),chEn=gpPins(GP.chg.enable);
+  let text;
+  if(reg==='w1ts'||reg==='w1tc')text=t('gp_x_'+reg,`<code>${hexN(val,2)}</code>`,t('pins_list',gpPins(val&0xFF)),`<code>${hexN(b.out,2)}</code>`,`<code>${hexN(GP.out,2)}</code>`);
+  else if(reg==='out'){
+    text=t('gp_x_out',hexN(val,2),`<code>${hexN(b.out,2)}</code>`,`<code>${hexN(GP.out,2)}</code>`);
+    const lost=gpPins(b.out&~val&0xFF);if(lost.length)text+=' '+t('gp_x_out_lost',t('pins_list',lost));
+  }else if(reg==='enable')text=t('gp_x_en',`<code>${hexN(b.enable,2)}</code>`,`<code>${hexN(GP.enable,2)}</code>`);
+  else text=t('gp_x_inw');
+  const eff=[];
+  if(reg==='enable'){chEn.forEach(n=>eff.push(t(gpBit(GP.enable,n)?'gp_en_on':'gp_en_off',n)+' '+gpPin(n)));if(!chEn.length)eff.push(t('gp_nochange'));}
+  else if(reg!=='in'){chOut.forEach(n=>eff.push(gpBit(GP.enable,n)?gpPin(n):t('gp_nodrv',n)));if(!chOut.length)eff.push(t('gp_nochange'));}
+  if(extra)eff.push(extra);
+  GP.last={title:t('gp_t_'+reg),who:t('gp_who_w'),text:text+(eff.length?'<br>'+eff.join('<br>'):''),
+    code:[cLine||`GPIO_${GP_REG[reg].name} = ${hexN(val,2)};`,...gpAsm(reg,val,'sw')]};
+  gpRender();
+}
+function gpRead(cLine){
+  let v=0;const rnd=[];
+  for(let n=0;n<8;n++){const l=gpLevel(n);let b=l===1?1:0;if(l==='?'||l==='!'){b=Math.random()<.5?1:0;rnd.push(n);}v|=b<<n;}
+  GP.a4=v>>>0;GP.hl={reg:'in',val:GP.a4};GP.chg={};
+  let text=t('gp_x_in',`<code>${hexN(GP.a4,2)}</code>`,`<code>${bin(GP.a4,8)}</code>`)+'<br>'+t('gp_x_in_btn',gpBit(GP.a4,5),gpBit(GP.a4,6));
+  if(rnd.length)text+='<br>'+t('gp_x_in_rnd',t('pins_list',rnd));
+  GP.last={title:t('gp_t_in'),who:t('gp_who_r'),text,code:[cLine||'uint32_t a4 = GPIO_IN;',...gpAsm('in',0,'lw')]};
+  gpRender();
+}
+function gpPress(n){
+  GP.press[n]=!GP.press[n];GP.hl=null;GP.chg={};
+  let text=t(GP.press[n]?'gp_x_press':'gp_x_release',GP_USED[n],n)+'<br>'+gpPin(n);
+  if(gpKind(n)==='short')text+='<br>'+t('gp_x_short_why');
+  GP.last={title:t('gp_t_btn'),who:t('gp_who_b'),text,code:[t('gp_c_board')]};
+  gpRender();
+}
+function gpPull(n){
+  GP.pull=(GP.pull^(1<<n))>>>0;GP.hl=null;GP.chg={};
+  const text=t(gpBit(GP.pull,n)?'gp_x_pu_on':'gp_x_pu_off',n)+'<br>'+gpPin(n)+'<br>'+t('gp_x_iomux');
+  GP.last={title:t('gp_t_pu'),who:'IO_MUX',text,code:[t('gp_c_pu',n)]};
+  gpRender();
+}
+const GP_PRE=[
+  {c:'pinMode(4, OUTPUT)',f:()=>gpWrite('enable',GP.enable|0x10,'pinMode(4, OUTPUT);',t('gp_note_enw1ts'))},
+  {c:'digitalWrite(4, HIGH)',f:()=>gpWrite('w1ts',0x10,'digitalWrite(4, HIGH);')},
+  {c:'digitalWrite(4, LOW)',f:()=>gpWrite('w1tc',0x10,'digitalWrite(4, LOW);')},
+  {c:'digitalRead(5)',f:()=>gpRead('int a = (GPIO_IN >> 5) & 1;   // digitalRead(5)')},
+  {c:'GPIO_OUT = 0x20',f:()=>gpWrite('out',0x20,'GPIO_OUT = 0x20;   // '+t('gp_c_out'))},
+  {c:'pinMode(5, OUTPUT)',f:()=>gpWrite('enable',GP.enable|0x20,'pinMode(5, OUTPUT);   // '+t('gp_c_bad'),t('gp_note_enw1ts'))},
+  {c:'digitalWrite(5, HIGH)',f:()=>gpWrite('w1ts',0x20,'digitalWrite(5, HIGH);')},
+  {c:'pinMode(5, INPUT_PULLUP)',f:()=>{GP.pull=(GP.pull|0x20)>>>0;gpWrite('enable',GP.enable&~0x20,'pinMode(5, INPUT_PULLUP);',t('gp_note_pu5'));}},
+];
+function gpSvg(){
+  const ROWS=[['w1ts',50],['w1tc',92],['enable',142],['out',184]],YIN=350;
+  let o='<defs><marker id="gpArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--isr)"/></marker>'+
+    '<marker id="gpArrM" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>';
+  // row labels
+  const lab=(y,a,b,mono)=>txt(12,y-2,a,{'font-size':12.5,'font-weight':600,class:mono?'m':null})+txt(12,y+13,b,{'font-size':11,fill:'var(--muted)'});
+  ROWS.forEach(([r,y])=>o+=lab(y,`${GP_REG[r].name} +${hexN(GP_REG[r].off,2)}`,t('gp_rd_'+r),1));
+  o+=lab(226,t('gp_l_drv'),t('gp_l_drv_s'));o+=lab(290,t('gp_l_pin'),t('gp_l_pin_s'));
+  o+=lab(YIN,`IN +${hexN(0x3C,2)}`,t('gp_rd_in'),1);o+=lab(420,t('gp_l_board'),t('gp_l_board_s'));
+  o+=svgEl('line',{x1:200,y1:117,x2:970,y2:117,stroke:'var(--rule)','stroke-dasharray':'3 4'});
+  const cell=(x,y,v,o2)=>{
+    o2=o2||{};
+    const fill=o2.hot?'var(--isr-bg)':v==='1'?'color-mix(in srgb,var(--ink) 10%,var(--surface))':'var(--surface)';
+    let s=`<g class="gpbit" data-r="${o2.r}" data-n="${o2.n}" style="cursor:pointer" role="button" tabindex="0">`;
+    s+=svgEl('rect',{x:x-17,y:y-13,width:34,height:26,rx:4,fill,stroke:o2.hot?'var(--isr)':'var(--rule)','stroke-width':o2.hot?2.5:1.2});
+    s+=txt(x,y+5,v,{'text-anchor':'middle',class:'m','font-size':14,'font-weight':v==='1'?600:400,fill:v==='·'?'var(--muted)':'var(--ink)'});
+    return s+'</g>';
+  };
+  for(let n=7;n>=0;n--){
+    const x=gpCx(n),used=GP_USED[n]!==undefined,en=gpBit(GP.enable,n),ob=gpBit(GP.out,n),k=gpKind(n),lv=gpLevel(n),pu=gpBit(GP.pull,n);
+    o+=txt(x,22,'GPIO '+n,{'text-anchor':'middle','font-size':12.5,'font-weight':600,fill:used?'var(--ink)':'var(--muted)'});
+    o+=`<g opacity="${used?1:.55}">`;
+    // W1TS / W1TC: which OUT bits the last write changed
+    if(GP.hl&&(GP.hl.reg==='w1ts'||GP.hl.reg==='w1tc')&&gpBit(GP.hl.val,n)){
+      const y1=GP.hl.reg==='w1ts'?50:92;
+      o+=svgEl('path',{d:`M${x-17},${y1} H${x-29} V184 H${x-20}`,fill:'none',stroke:'var(--isr)','stroke-width':2,'marker-end':'url(#gpArr)'});
+    }
+    // ENABLE switches the driver
+    const ec=en?'var(--ok)':'var(--idle)';
+    o+=svgEl('path',{d:`M${x+17},142 H${x+31} V226 H${x+9}`,fill:'none',stroke:ec,'stroke-width':2.2});
+    o+=svgEl('circle',{cx:x+9,cy:226,r:3.2,fill:ec});
+    // OUT into the driver
+    o+=svgEl('line',{x1:x,y1:197,x2:x,y2:208,stroke:en?'var(--ink)':'var(--idle)','stroke-width':2});
+    o+=svgEl('polygon',{points:`${x-16},208 ${x+16},208 ${x},244`,fill:en?'var(--surface)':'var(--sunken)',stroke:en?'var(--ink)':'var(--idle)','stroke-width':2,'stroke-dasharray':en?null:'4 3'});
+    if(!en)o+=txt(x,221,t('gp_off'),{'text-anchor':'middle','font-size':10,'font-weight':600,fill:'var(--muted)'});
+    const dc=!en?'var(--idle)':ob?'var(--isr)':'var(--ink)';
+    o+=svgEl('line',{x1:x,y1:244,x2:x,y2:280,stroke:dc,'stroke-width':en?3:2,'stroke-dasharray':en?null:'4 3'});
+    // pull-up (clickable)
+    const pc=pu?'var(--ink)':'var(--idle)',pd=pu?null:'3 3';
+    o+=`<g class="gppull" data-n="${n}" style="cursor:pointer" role="button" tabindex="0" aria-pressed="${!!pu}">`;
+    o+=svgEl('rect',{x:x-46,y:232,width:30,height:64,fill:'transparent'});
+    o+=svgEl('path',{d:`M${x-10},290 H${x-32} V272`,fill:'none',stroke:pc,'stroke-width':1.8,'stroke-dasharray':pd});
+    o+=svgEl('rect',{x:x-37,y:252,width:10,height:20,rx:1.5,fill:pu?'var(--surface)':'transparent',stroke:pc,'stroke-width':1.8,'stroke-dasharray':pd});
+    o+=svgEl('line',{x1:x-32,y1:252,x2:x-32,y2:245,stroke:pc,'stroke-width':1.8,'stroke-dasharray':pd});
+    o+=txt(x-32,241,'3,3V'.replace(',',lang==='pl'?',':'.'),{'text-anchor':'middle','font-size':9.5,fill:pu?'var(--muted)':'var(--idle)'});
+    o+='</g>';
+    // the pin
+    const pinC={1:'var(--isr)',0:'var(--ink)','?':'var(--idle)','!':'var(--bad)'}[lv];
+    if(k==='short')o+=svgEl('circle',{cx:x,cy:290,r:19,fill:'var(--bad)',opacity:.25});
+    o+=svgEl('rect',{x:x-10,y:280,width:20,height:20,rx:2,fill:pinC});
+    const lt=lv===1?(lang==='pl'?'3,3 V':'3.3 V'):lv===0?'0 V':lv==='?'?'?':t('gp_short');
+    o+=txt(x-14,320,lt,{'text-anchor':'end','font-size':11.5,'font-weight':600,fill:lv==='!'?'var(--bad)':'var(--muted)'});
+    o+=svgEl('line',{x1:x,y1:300,x2:x,y2:333,stroke:'var(--muted)','stroke-width':1.8,'marker-end':'url(#gpArrM)'});
+    // what is on the board
+    if(used){
+      o+=svgEl('path',{d:`M${x+10},290 H${x+30} V405`,fill:'none',stroke:'var(--work)','stroke-width':2});
+      if(n===4){
+        const on=lv===1;
+        if(on)o+=svgEl('circle',{cx:x+30,cy:418,r:19,fill:'#FF5F56',opacity:.3});
+        o+=svgEl('circle',{cx:x+30,cy:418,r:11,fill:on?'#FF5F56':'color-mix(in srgb,#FF5F56 30%,var(--surface))',stroke:'#B8372B','stroke-width':1.5});
+      }else{
+        const p=!!GP.press[n];
+        o+=`<g class="gpbtn" data-n="${n}" style="cursor:pointer" role="button" tabindex="0" aria-pressed="${p}">`;
+        o+=svgEl('rect',{x:x+18,y:406,width:24,height:24,rx:3,fill:'var(--lcd-frame)'});
+        o+=svgEl('circle',{cx:x+30,cy:418,r:p?6.5:8,fill:p?'#1E7E4F':'#27C93F'});
+        o+='</g>';
+      }
+      o+=txt(x+48,422,GP_USED[n],{'font-size':12,'font-weight':600});
+      o+=svgEl('line',{x1:x+30,y1:430,x2:x+30,y2:441,stroke:'var(--muted)','stroke-width':1.8});
+      [[9,441],[6,445],[3,449]].forEach(([w,y])=>o+=svgEl('line',{x1:x+30-w,y1:y,x2:x+30+w,y2:y,stroke:'var(--muted)','stroke-width':1.8}));
+    }
+    // register cells
+    ROWS.forEach(([r,y])=>{
+      let v,hot=false;
+      if(r==='w1ts'||r==='w1tc'){v=GP.hl&&GP.hl.reg===r?String(gpBit(GP.hl.val,n)):'·';hot=v==='1';}
+      else{v=String(gpBit(r==='out'?GP.out:GP.enable,n));hot=!!(GP.chg[r]&&gpBit(GP.chg[r],n));}
+      o+=cell(x,y,v,{r,n,hot});
+    });
+    o+=cell(x,YIN,lv===1||lv===0?String(lv):'?',{r:'in',n,hot:GP.hl&&GP.hl.reg==='in'});
+    o+='</g>';
+  }
+  $('gpSvg').innerHTML=o;
+  const act=(sel,f)=>$('gpSvg').querySelectorAll(sel).forEach(g=>{
+    g.addEventListener('click',()=>f(g));
+    g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();f(g);}});
+  });
+  act('.gpbit',g=>{
+    const r=g.dataset.r,n=+g.dataset.n,m=(1<<n)>>>0;
+    if(r==='w1ts'||r==='w1tc')gpWrite(r,m,`GPIO_${GP_REG[r].name} = 1 << ${n};`);
+    else if(r==='out')gpWrite('out',GP.out^m,`GPIO_OUT = ${hexN(GP.out^m,2)};   // bit ${n}`);
+    else if(r==='enable')gpWrite('enable',GP.enable^m,`GPIO_ENABLE = ${hexN(GP.enable^m,2)};   // bit ${n}`);
+    else gpRead();
+  });
+  act('.gpbtn',g=>gpPress(+g.dataset.n));
+  act('.gppull',g=>gpPull(+g.dataset.n));
+}
+function gpRender(){
+  gpSvg();
+  $('gpExpl').innerHTML=GP.last?explHTML([GP.last.title,GP.last.who,GP.last.text],''):explHTML(t('gp_intro'),'');
+  $('gpCode').hidden=!GP.last;
+  $('gpCode').innerHTML=GP.last?GP.last.code.map((s,i)=>`<span class="l${i===0?' act k':''}">${codeHTML(s)}</span>`).join(''):'';
+  const reg=(k,v,c)=>`<div class="reg${c?' chg':''}"><span>${esc(t(k))}</span><b>${esc(v)}</b></div>`;
+  const hl=GP.hl||{};
+  $('gpRegs').innerHTML=reg('gp_reg_out',hexN(GP.out,2)+'  ('+bin(GP.out,8)+')',!!GP.chg.out)+
+    reg('gp_reg_en',hexN(GP.enable,2)+'  ('+bin(GP.enable,8)+')',!!GP.chg.enable)+
+    reg('gp_reg_in',gpInStr(),hl.reg==='in')+
+    reg('gp_reg_w1ts',hl.reg==='w1ts'?hexN(hl.val,2):'—',hl.reg==='w1ts')+
+    reg('gp_reg_w1tc',hl.reg==='w1tc'?hexN(hl.val,2):'—',hl.reg==='w1tc')+
+    reg('gp_reg_a4',GP.a4===null?'—':hexN(GP.a4,2),hl.reg==='in');
+  const it=(st,l)=>`<span><span class="sw" style="${st}"></span>${esc(l)}</span>`;
+  $('gpLegend').innerHTML=it('background:var(--isr)',t('gp_lg_hi'))+it('background:var(--ink)',t('gp_lg_lo'))+it('background:var(--idle)',t('gp_lg_fl'))+
+    it('background:var(--bad)',t('gp_lg_sh'))+it('border:2px solid var(--ok)',t('gp_lg_on'))+it('border:2px dashed var(--idle)',t('gp_lg_offd'))+it('background:var(--isr-bg);border:2px solid var(--isr)',t('gp_lg_set'));
+}
+function gpFill(){
+  $('gpPresets').innerHTML=GP_PRE.map((p,i)=>`<button class="mono" data-g="${i}">${esc(p.c)}</button>`).join('')+`<button data-g="reset">${esc(t('gp_reset'))}</button>`;
+  $('gpPresets').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.g==='reset'){GP=gpFresh();gpRender();}else GP_PRE[+b.dataset.g].f();
+  });
+}
+function gpInit(){}
+
+/* =====================================================================
    Polling a przerwania / polling vs interrupts
    ===================================================================== */
 const PDUR=10000,SPIN_RATE=40000;
@@ -1717,12 +2033,13 @@ function caInit(){
    aplikacja / app
    ===================================================================== */
 const S={};
-const MODS=['i2c','mmio','poll','irq','dma'];
+const MODS=['i2c','mmio','gpio','poll','irq','dma'];
 let cur='i2c';
 try{const h=location.hash.slice(1);if(MODS.includes(h))cur=h;else{const s=localStorage.getItem('ioSimMod');if(MODS.includes(s))cur=s;}}catch(e){}
 function renderAll(){
   i2cFill();S.i2c.go(S.i2c.i);
   mmFill();S.mmio.go(S.mmio.i);
+  gpFill();gpRender();
   poLegend();poRender();
   irFill();S.irq.go(S.irq.i);
   segSync($('dmMode'),D.mode);S.dma.go(S.dma.i);
@@ -1744,7 +2061,7 @@ function showMod(m){
 }
 document.querySelectorAll('#topics button').forEach(b=>b.addEventListener('click',()=>showMod(b.dataset.mod)));
 document.querySelectorAll('.langs button').forEach(b=>b.addEventListener('click',()=>{
-  lang=b.dataset.lang;try{localStorage.setItem('ioSimLang',lang);}catch(e){}applyLang();
+  lang=b.dataset.lang;try{localStorage.setItem('ioSimLang',lang);}catch(e){}GP.last=null;applyLang();
 }));
 const typing=e=>{const tg=e.target;return tg&&(tg.tagName==='INPUT'||tg.tagName==='SELECT'||tg.tagName==='TEXTAREA'||tg.isContentEditable);};
 document.addEventListener('keydown',e=>{
